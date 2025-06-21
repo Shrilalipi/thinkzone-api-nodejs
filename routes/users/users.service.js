@@ -2,24 +2,17 @@ import { UserDBOperations } from "./users.class.js";
 import { comparePassword } from "./utils/comparePassword.js";
 import { generateAccesstoken } from "./utils/generateAccesstoken.js";
 import { hashPassword } from "./utils/hashPassword.js";
+import { validateEmail } from "./utils/validateEmail.js";
+import { validatePassword } from "./utils/validatePassword.js";
 import { verifyAccesstoken } from "./utils/verifyAccesstoken.js";
 
 export const registerUser = async (req, res, next) => {
     try {
         const { body } = req;
-        console.log("BODY____", body);
         const { username, email, password, role, district, registeredAt } = body;
 
-        /**
-         * @todo Validation for username & email & password format
-        */
-        if (email.indexOf("@") === -1 || email.charAt(1) === '@') {
-            throw new Error('Invalid email.');
-        }
-
-
-
-
+        validateEmail(email);
+        validatePassword(password);
         const hashedPassword = await hashPassword(password);
         if (!hashedPassword) throw new Error('Error during password hashing');
         const existingEmail = await UserDBOperations.getAllData({ email }, 1, 0);
@@ -55,8 +48,8 @@ export const login = async (req, res, next) => {
         const dbQuery = {};
         if (username) dbQuery.username = username;
         else dbQuery.email = email;
-
         const existingUser = await UserDBOperations.getAllData(dbQuery, 1, 0);
+        console.log("existingUser :: ", existingUser);
         if (!existingUser || existingUser.length === 0) {
             throw new Error('User does not exists');
         }

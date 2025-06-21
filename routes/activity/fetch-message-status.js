@@ -1,112 +1,93 @@
 import { MongoClient } from "mongodb";
-import mongoose from "mongoose";
 
 export const fetchMessageStats = async (req, res) => {
     try {
-        console.log(req.params);
         const { params } = req;
         const { district } = params;
+        if (!district) throw new Error('District is required in params');
         const client = new MongoClient(process.env.WP_DB_URI);
         await client.connect();
         const db = client.db('whatsapp')
         const collection = db.collection('prakashak_students')
-        // const collection = db.collection('meta_conversations')
-        // console.log(collection);
-        console.log(district);
+        // db.collection('meta_conversations').createIndex({ contact: 1 });
+        // db.collection('prakashak_students').createIndex({ phone_number: 1 });
         const aggregateQuery = [];
-        // aggregateQuery.push(
-        //     {
-        //         $facet: {
-        //             totalMessages: [
-        //                 {
-        //                     $match: {
-        //                         district,
-        //                     },
-        //                 },
-        //                 {
-        //                     $lookup: {
-        //                         from: 'meta_conversations',
-        //                         let: { phone: '$phone_number' },
-        //                         pipeline: [
-        //                             {
-        //                                 $match: {
-        //                                     $expr: { $eq: ['$contact', '$$phone'] }
-        //                                 }
-        //                             },
-        //                             // {
-        //                             //     $group: {
-        //                             //         _id: "$type",
-        //                             //         count: { $sum: "$type" }
-        //                             //     }
-        //                             // }
-        //                         ],
-        //                         as: 'metaConversationData'
-        //                     }
-        //                 },
-        //                 // {
-        //                 //     $switch: {
-        //                 //         branches: [
-        //                 //             {
-        //                 //                 case: { $eq: ["$metaConversationData.type", 'sent'] }, then: 'sent'
-        //                 //             },
-        //                 //             {
-        //                 //                 case: {}, then: {}
-        //                 //             },
-        //                 //         ],
-        //                 //         default: {}
-        //                 //     }
-        //                 // }
-
-        //             ]
-        //         },
-        //     }
-        //     // {
-        //     //     $match: {
-        //     //         district
-        //     //     }
-        //     // },
-        //     // {
-        //     //     $lookup: {
-        //     //         from: 'meta_conversations',
-        //     //         let: { phone: '$phone_number' },
-        //     //         pipeline: [
-        //     //             {
-        //     //                 $match: {
-        //     //                     $expr: { $eq: ['$contact', '$$phone'] }
-        //     //                 }
-        //     //             },
-        //     //             {
-        //     //                 $group: {
-        //     //                     _id: "$type",
-        //     //                     count: { $sum: "$type" }
-        //     //                 }
-        //     //             }
-        //     //         ],
-        //     //         as: 'metaConversationData'
-        //     //     }
-        //     // },
-        // );
-
         aggregateQuery.push(
             {
+                $match: { district }
+            },
+            {
                 $lookup: {
-                    from: 'prakashak_students',
-                    let: { phone: '$contact' },
-                    pipeline: [
-                        {
-                            $match: {
-                                $expr: { $eq: ['$phone_number', '$$phone'] },
-                                district
-                            }
+                    from: "meta_conversations",
+                    localField: "phone_number",
+                    foreignField: "contact",
+                    as: "messages"
+                }
+            },
+            { $unwind: { path: '$messages', preserveNullAndEmptyArrays: true } },
+            {
+                $match: {
+                    "messages.type": { $in: ["sent", "received"] }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalMessages: { $sum: 1 },
+                    totalMessagesSent: {
+                        $sum: {
+                            $cond: [{ $eq: ["$messages.type", "sent"] }, 1, 0]
                         }
-                    ],
-                    as: 'studentdata'
+                    },
+                    totalMessagesReceived: {
+                        $sum: {
+                            $cond: [{ $eq: ["$messages.type", "received"] }, 1, 0]
+                        }
+                    },
+                    imageMessagesSent: {
+                        $sum: {
+                            $cond: [
+                                { $and: [{ $eq: ["$messages.type", "sent"] }, { $eq: ["$messages.message.type", "image"] }] },
+                                1, 0
+                            ]
+                        }
+                    },
+                    videoMessagesSent: {
+                        $sum: {
+                            $cond: [
+                                { $and: [{ $eq: ["$messages.type", "sent"] }, { $eq: ["$messages.message.type", "video"] }] },
+                                1, 0
+                            ]
+                        }
+                    },
+                    textMessagesSent: {
+                        $sum: {
+                            $cond: [
+                                { $and: [{ $eq: ["$messages.type", "sent"] }, { $eq: ["$messages.message.type", "text"] }] },
+                                1, 0
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    district: 1,
+                    totalMessages: 1,
+                    totalMessagesSent: 1,
+                    totalMessagesReceived: 1,
+                    imageMessagesSent: 1,
+                    videoMessagesSent: 1,
+                    textMessagesSent: 1
                 }
             }
-        )
-        const result = await collection.aggregate(aggregateQuery).toArray().catch((e) => console.error(e));
-        console.log("result :: ", result);
-        res.json(result);
+        );
+        const result = await collection.aggregate(aggregateQuery).toArray().catch((e) => {
+            console.error(e);
+            throw new Error('Can not fetch data right now');
+        });
+        res.json(result[0]);
 
     } catch (err) {
         console.error(err);
